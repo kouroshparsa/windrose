@@ -75,6 +75,7 @@ class WindroseAxes(PolarAxes):
         # Uncomment to have the possibility to change the resolution directly
         # when the instance is created
         # self.RESOLUTION = kwargs.pop('resolution', 100)
+        self.use_percentage_spoke = kwargs.pop("use_percentage_spoke", False)
         self.rmax = kwargs.pop("rmax", None)
         self.theta_labels = kwargs.pop("theta_labels", None)
         if self.theta_labels is None:
@@ -82,6 +83,12 @@ class WindroseAxes(PolarAxes):
         PolarAxes.__init__(self, *args, **kwargs)
         self.set_aspect("equal", adjustable="box", anchor="C")
         self.radii_angle = 67.5
+        self.radii_count = 5
+        self.radii = None
+        if 'radii' in kwargs and isinstance(kwargs['radii'], list):
+            self.radii = np.array(kwargs['radii'])
+            self.radii_count = len(self.radii)
+
         self.cla()
 
     @staticmethod
@@ -97,7 +104,7 @@ class WindroseAxes(PolarAxes):
                     figsize=FIGSIZE_DEFAULT,
                     dpi=DPI_DEFAULT,
                     facecolor="w",
-                    edgecolor="w",
+                    edgecolor="w"
                 )
             if rect is None:
                 rect = [0.1, 0.1, 0.8, 0.8]
@@ -141,15 +148,26 @@ class WindroseAxes(PolarAxes):
         if angle is None:
             angle = self.radii_angle
         self.radii_angle = angle
-        N = 5
+        radii = None
         rmax = self.get_rmax()
-        radii = np.linspace(0, rmax, N + 1)
-        if rmax % N == 0:
+        if self.radii is None:
+            radii = np.linspace(0, rmax, self.radii_count + 1)
+        else:
+            if self.use_percentage_spoke:
+                radii = np.array([v/100.0*rmax for v in self.radii])
+            else:
+                radii = np.array([v for v in self.radii])
+
+        if rmax % self.radii_count == 0:
             fmt = "%d"
         else:
             fmt = "%.1f"
         radii_labels = [fmt % r for r in radii]
-        # radii_labels[0] = ""  # Removing label 0
+
+        if self.use_percentage_spoke:
+            radii_sum = np.sum(self._info["table"], axis=0).sum()
+            radii_labels = ['%{}'.format(int(100.0 * r / radii_sum)) for r in radii]
+
         self.set_rgrids(
             radii=radii[1:], labels=radii_labels[1:], angle=self.radii_angle, **kwargs
         )
@@ -216,12 +234,15 @@ class WindroseAxes(PolarAxes):
                 )
             return handles
 
+
         def get_labels(decimal_places=1, units=None):
-            _decimal_places = str(decimal_places)
+            """
+            @decimal_places: int, number of decimal places to show on the legend
+            @units: string, you can you this optional parameter to display the unit
+            """
+            fmt = f"[%.{decimal_places}f : %0.{decimal_places}f"
 
-            fmt = "[%." + _decimal_places + "f " + ": %0." + _decimal_places + "f"
-
-            labels = np.copy(self._info["bins"])
+            label_vals = np.copy(self._info["bins"])
             if locale.getlocale()[0] in ["fr_FR"]:
                 fmt += "["
             else:
@@ -230,7 +251,14 @@ class WindroseAxes(PolarAxes):
             if units:
                 fmt += " " + units
 
-            labels = [fmt % (labels[i], labels[i + 1]) for i in range(len(labels) - 1)]
+            labels = []
+            for i in range(len(label_vals) - 1):
+                start = label_vals[i]
+                end = label_vals[i + 1]
+                if end == np.inf:
+                    labels.append(f'\u2265 %{start}')
+                else:
+                    labels.append(fmt % (start, end))
             return labels
 
         kwargs.pop("labels", None)
@@ -568,6 +596,8 @@ class WindroseAxes(PolarAxes):
             data below this value will be removed from the computation.
 
         """
+        if 'radii' in kwargs:
+            self.radii = kwargs.pop('radii')
 
         bins, nbins, nsector, colors, angles, kwargs = self._init_plot(
             direction, var, **kwargs
@@ -646,6 +676,8 @@ class WindroseAxes(PolarAxes):
             data below this value will be removed from the computation.
 
         """
+        if 'radii' in kwargs:
+            self.radii = kwargs.pop('radii')
 
         bins, nbins, nsector, colors, angles, kwargs = self._init_plot(
             direction, var, **kwargs
